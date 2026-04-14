@@ -23,6 +23,27 @@
  *                  └ ...
  */
 export const POLL_RESPONSE_JS = `(() => {
+  // --- 0. Visibility helpers ---
+  // Check if an element is visually hidden using computed styles (reliable),
+  // not class names alone (fragile — e.g. opacity-0 can be overridden by state classes).
+  const isVisiblyHidden = (el) => {
+    if (!el || !el.ownerDocument || !el.ownerDocument.defaultView) return false;
+    try {
+      const cs = el.ownerDocument.defaultView.getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return true;
+      if (parseFloat(cs.opacity) < 0.01) return true;
+      if (parseInt(cs.maxHeight, 10) === 0 && cs.overflow !== 'visible') return true;
+      if (el.getAttribute('aria-hidden') === 'true') return true;
+      if (el.hasAttribute('inert')) return true;
+      if (el.clientHeight === 0 && el.scrollHeight > 0) return true;
+    } catch(e) { /* detached node or cross-origin — fall through */ }
+    return false;
+  };
+
+  // Icon names used by Material Symbols — matched individually OR as concatenated runs
+  const ICON_NAMES = ['content_copy','thumb_up','thumb_down','check','close','chevron_right','chevron_left','undo','keyboard_arrow_up','expand_more','expand_less','more_vert','more_horiz','edit','delete','share','download','play_arrow','stop','send','arrow_upward','arrow_downward','refresh','settings','info','warning','error','help','search','menu','add','remove','visibility','visibility_off','lock','lock_open','star','star_border','favorite','favorite_border'];
+  const ICON_CONCAT_RE = new RegExp('(' + ICON_NAMES.join('|') + '){2,}', 'gi');
+
   // --- 1. Identify user messages ---
   // User messages are DIV.whitespace-pre-wrap inside DIV.max-h-[20vh] inside DIV.group.pt-4
   // Must filter out: PRE (terminal output), CODE (inline code), system context blocks
@@ -48,12 +69,15 @@ export const POLL_RESPONSE_JS = `(() => {
   const lastUserMsg = userMsgs[userMsgs.length - 1];
 
   // --- 2. Text extraction helper ---
-  const extractBlockText = (block) => {
+  const extractBlockText = (block, skipRootGuard) => {
     const clone = block.cloneNode(true);
     // Guard: if root element itself is hidden/invisible, return empty
-    const rootCls = (typeof clone.className === 'string') ? clone.className : '';
-    if (/\\bopacity-0\\b/.test(rootCls) || /\\bmax-h-0\\b/.test(rootCls) || /\\bhidden\\b/.test(rootCls) || /\\bpointer-events-none\\b/.test(rootCls)) {
-      return '';
+    // (skipped for thinking containers which are intentionally collapsed)
+    if (!skipRootGuard) {
+      const rootCls = (typeof clone.className === 'string') ? clone.className : '';
+      if (/\\bopacity-0\\b/.test(rootCls) || /\\bmax-h-0\\b/.test(rootCls) || /\\bhidden\\b/.test(rootCls) || /\\bpointer-events-none\\b/.test(rootCls)) {
+        return '';
+      }
     }
     // Strip hidden subtrees, icons, scripts, styles
     clone.querySelectorAll('style, script, [aria-hidden="true"], .google-symbols, [class*="symbol"], [class*="material-symbols"]').forEach((el) => el.remove());
@@ -109,9 +133,8 @@ export const POLL_RESPONSE_JS = `(() => {
       if (hasSibWithResponse) {
         return afterMe.filter(s => {
           if (!s.textContent?.trim()) return false;
-          // Skip invisible status indicators (opacity-0, hidden, pointer-events-none)
-          const c = (typeof s.className === 'string') ? s.className : '';
-          if (/\\bopacity-0\\b/.test(c) || /\\bhidden\\b/.test(c) || /\\bpointer-events-none\\b/.test(c)) return false;
+          // Skip invisible status indicators using computed styles
+          if (isVisiblyHidden(s)) return false;
           return true;
         });
       }
@@ -124,11 +147,8 @@ export const POLL_RESPONSE_JS = `(() => {
           const turn = siblings[j];
           const nextUserGroup = turn.querySelector('.group.pt-4 .whitespace-pre-wrap');
           if (nextUserGroup) break;
-          if (turn.textContent?.trim()) {
-            const tc = (typeof turn.className === 'string') ? turn.className : '';
-            if (!/\\bopacity-0\\b/.test(tc) && !/\\bhidden\\b/.test(tc) && !/\\bpointer-events-none\\b/.test(tc)) {
+          if (turn.textContent?.trim() && !isVisiblyHidden(turn)) {
               blocks.push(turn);
-            }
           }
         }
         return blocks;
@@ -146,11 +166,8 @@ export const POLL_RESPONSE_JS = `(() => {
       const turn = allTurns[i];
       if (turn.classList.contains('group') && turn.classList.contains('pt-4')
           && turn.querySelector('.whitespace-pre-wrap')) break;
-      if (turn.textContent?.trim()) {
-        const tc = (typeof turn.className === 'string') ? turn.className : '';
-        if (!/\\bopacity-0\\b/.test(tc) && !/\\bhidden\\b/.test(tc) && !/\\bpointer-events-none\\b/.test(tc)) {
+      if (turn.textContent?.trim() && !isVisiblyHidden(turn)) {
           blocks.push(turn);
-        }
       }
     }
     return blocks;
@@ -163,9 +180,15 @@ export const POLL_RESPONSE_JS = `(() => {
     // Check for .leading-relaxed.select-text — this is the main response text block
     // Filter out any that are inside collapsed thinking containers (max-h-0/opacity-0)
     const responseEls = [...b.querySelectorAll('.leading-relaxed.select-text')].filter(el => {
-      const hiddenAncestor = el.closest('.max-h-0, .opacity-0');
-      // Only exclude if the hidden ancestor is within this block (not the block itself)
-      return !hiddenAncestor || !b.contains(hiddenAncestor);
+      // Primary: check computed visibility on original DOM element (handles class overrides)
+      if (isVisiblyHidden(el)) return false;
+      // Walk ancestors up to block boundary — if any ancestor is hidden, exclude
+      let ancestor = el.parentElement;
+      while (ancestor && ancestor !== b) {
+        if (isVisiblyHidden(ancestor)) return false;
+        ancestor = ancestor.parentElement;
+      }
+      return true;
     });
     // Detect thinking: <details>, [class*="thinking"], [class*="thought"],
     // or "Thought for Xs" button + adjacent collapsed container, or opacity-70 blocks
@@ -179,7 +202,7 @@ export const POLL_RESPONSE_JS = `(() => {
     if (hasThinking) {
       if (isOpacityThinking && responseEls.length === 0) {
         // Pure thinking block (opacity-70 only, no response text)
-        thinkingParts.push(extractBlockText(b));
+        thinkingParts.push(extractBlockText(b, true));
       } else {
         // Collect thinking text from recognized thinking elements
         for (const el of thinkEls) thinkingParts.push((el.textContent || '').trim());
@@ -189,7 +212,7 @@ export const POLL_RESPONSE_JS = `(() => {
           while (sib) {
             const cls = sib.className || '';
             if (typeof cls === 'string' && (/\\bmax-h-0\\b/.test(cls) || /\\bopacity-0\\b/.test(cls))) {
-              thinkingParts.push(extractBlockText(sib));
+              thinkingParts.push(extractBlockText(sib, true));
             } else { break; }
             sib = sib.nextElementSibling;
           }
@@ -236,7 +259,16 @@ export const POLL_RESPONSE_JS = `(() => {
       if (txt) responseParts.push(txt);
     }
   }
-  const responseText = responseParts.join('\\n').trim();
+  // --- Final text normalization: strip icon text artifacts ---
+  const stripIconArtifacts = (text) => {
+    let cleaned = text;
+    // Remove concatenated icon runs (e.g. 'content_copythumb_upthumb_down')
+    cleaned = cleaned.replace(ICON_CONCAT_RE, '');
+    // Collapse multiple blank lines left by removals
+    cleaned = cleaned.replace(/\\n{3,}/g, '\\n\\n').trim();
+    return cleaned;
+  };
+  const responseText = stripIconArtifacts(responseParts.join('\\n').trim());
   const thinkingText = thinkingParts.filter(Boolean).join('\\n').trim();
 
   // --- 5. Detect loading / stop button ---

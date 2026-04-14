@@ -25,7 +25,7 @@ import { POLL_RESPONSE_JS } from '../dist/domains/cats/services/agents/providers
  */
 function runPollInDom(assistantHtml, userMsg = 'User question') {
   const html = `
-		<div class="group">
+		<div class="group pt-4">
 			<div class="whitespace-pre-wrap">${userMsg}</div>
 		</div>
 		${assistantHtml}
@@ -132,6 +132,53 @@ describe('F061: POLL_RESPONSE_JS behavioral DOM fixtures', () => {
     assert.ok(result.thinkingText.includes('Actual thinking content'), 'thinkingText has thought content');
     assert.ok(!result.thinkingText.includes('color: red'), 'thinkingText has no CSS');
     assert.ok(!result.thinkingText.includes('should be stripped'), 'thinkingText has no script content');
+  });
+});
+
+// ── Regression tests (code review P1 items) ────────────────────────────
+
+describe('F061: POLL_RESPONSE_JS regression tests (code review)', () => {
+  it('concatenated icon text is stripped from responseText', () => {
+    // Simulates the toolbar icon leak: content_copythumb_upthumb_down
+    const result = runPollInDom(`
+			<div>
+				<div class="leading-relaxed select-text">
+					<p>Actual response content here.</p>
+				</div>
+				<div class="flex justify-between cursor-default">
+					<span>content_copy</span><span>thumb_up</span><span>thumb_down</span>
+				</div>
+			</div>
+		`);
+    assert.ok(result.responseText.includes('Actual response content'), 'responseText has real content');
+    assert.ok(!result.responseText.includes('content_copy'), 'icon text stripped individually');
+    assert.ok(!result.responseText.includes('thumb_up'), 'icon text stripped');
+    assert.ok(!result.responseText.includes('content_copythumb_upthumb_down'), 'concatenated icon text stripped');
+  });
+
+  it('icon-only blocks should not trigger response completion', () => {
+    // When thinking leaks and only toolbar icons remain, responseText should be empty
+    const result = runPollInDom(`
+			<div>
+				<button>Thought for 12s</button>
+				<div class="max-h-0 opacity-0">
+					<p>Internal thinking about the problem...</p>
+				</div>
+			</div>
+		`);
+    // Only thinking content exists — responseText must be empty
+    assert.ok(!result.responseText.includes('Internal thinking'), 'thinking text must not leak to responseText');
+    assert.ok(result.thinkingText.includes('Internal thinking'), 'thinkingText should contain thinking');
+  });
+
+  it('uses getComputedStyle-based isVisiblyHidden helper', () => {
+    assert.ok(POLL_RESPONSE_JS.includes('getComputedStyle'), 'script should use getComputedStyle for visibility');
+    assert.ok(POLL_RESPONSE_JS.includes('isVisiblyHidden'), 'script should define isVisiblyHidden helper');
+  });
+
+  it('has icon concatenation regex cleanup', () => {
+    assert.ok(POLL_RESPONSE_JS.includes('ICON_CONCAT_RE'), 'script should have ICON_CONCAT_RE pattern');
+    assert.ok(POLL_RESPONSE_JS.includes('stripIconArtifacts'), 'script should have stripIconArtifacts function');
   });
 });
 
