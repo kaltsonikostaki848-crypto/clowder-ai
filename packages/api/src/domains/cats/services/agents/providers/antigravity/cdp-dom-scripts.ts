@@ -80,7 +80,7 @@ export const POLL_RESPONSE_JS = `(() => {
       }
     }
     // Strip hidden subtrees, icons, scripts, styles
-    clone.querySelectorAll('style, script, [aria-hidden="true"], .google-symbols, [class*="symbol"], [class*="material-symbols"]').forEach((el) => el.remove());
+    clone.querySelectorAll('style, script, [aria-hidden="true"], [inert], .google-symbols, [class*="symbol"], [class*="material-symbols"]').forEach((el) => el.remove());
     for (const el of clone.querySelectorAll('*')) {
       const cls = el.className || '';
       if (typeof cls === 'string' && (/\\bmax-h-0\\b/.test(cls) || /\\bopacity-0\\b/.test(cls) || /\\bhidden\\b/.test(cls))) {
