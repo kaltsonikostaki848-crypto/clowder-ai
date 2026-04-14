@@ -29,13 +29,19 @@ export const POLL_RESPONSE_JS = `(() => {
   const userMsgs = [...document.querySelectorAll('.whitespace-pre-wrap')].filter((el) => {
     // Skip terminal output (PRE tags) and code blocks (CODE tags)
     if (el.tagName === 'PRE' || el.tagName === 'CODE') return false;
-    // Skip context-injected system prompt blocks (very long, contain 'Identity:')
+    // Skip context-injected system prompt blocks — but NOT legitimate user messages.
+    // Cat-cafe prompts may contain 'Identity:' in the user message body, so we cannot
+    // simply reject long text with that keyword. Instead: if the element is inside a
+    // recognised user-turn group (.group.pt-4), keep it regardless of length/content.
+    // Only reject if it matches ALL of: very long, has system-prompt markers, AND is
+    // NOT inside a user-turn group.
     const text = el.textContent || '';
-    if (text.length > 2000 && text.includes('Identity:')) return false;
+    const group = el.closest('.group');
+    const inUserTurnGroup = group && group.classList.contains('pt-4');
+    if (!inUserTurnGroup && text.length > 2000 && text.includes('Identity:')) return false;
     // Skip elements inside opacity-70 (thinking blocks)
     if (el.closest('.opacity-70')) return false;
     // Must be inside a user turn group (.group with .pt-4) to be a real user message
-    const group = el.closest('.group');
     if (group && !group.classList.contains('pt-4')) return false;
     return true;
   });
