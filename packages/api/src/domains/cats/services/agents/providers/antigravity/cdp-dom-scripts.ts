@@ -50,8 +50,13 @@ export const POLL_RESPONSE_JS = `(() => {
   // --- 2. Text extraction helper ---
   const extractBlockText = (block) => {
     const clone = block.cloneNode(true);
+    // Guard: if root element itself is hidden/invisible, return empty
+    const rootCls = (typeof clone.className === 'string') ? clone.className : '';
+    if (/\\bopacity-0\\b/.test(rootCls) || /\\bmax-h-0\\b/.test(rootCls) || /\\bhidden\\b/.test(rootCls) || /\\bpointer-events-none\\b/.test(rootCls)) {
+      return '';
+    }
     // Strip hidden subtrees, icons, scripts, styles
-    clone.querySelectorAll('style, script, [aria-hidden="true"], .google-symbols, [class*="symbol"]').forEach((el) => el.remove());
+    clone.querySelectorAll('style, script, [aria-hidden="true"], .google-symbols, [class*="symbol"], [class*="material-symbols"]').forEach((el) => el.remove());
     for (const el of clone.querySelectorAll('*')) {
       const cls = el.className || '';
       if (typeof cls === 'string' && (/\\bmax-h-0\\b/.test(cls) || /\\bopacity-0\\b/.test(cls) || /\\bhidden\\b/.test(cls))) {
@@ -59,12 +64,14 @@ export const POLL_RESPONSE_JS = `(() => {
       }
       // Strip UI icon text (Material Symbols icon labels rendered as text)
       const txt = (el.textContent || '').trim();
-      if (['content_copy','thumb_up','thumb_down','check','close','chevron_right','chevron_left','undo','keyboard_arrow_up'].includes(txt)) {
+      if (['content_copy','thumb_up','thumb_down','check','close','chevron_right','chevron_left','undo','keyboard_arrow_up','expand_more','expand_less','more_vert','more_horiz','edit','delete','share','download','play_arrow','stop','send'].includes(txt)) {
         el.remove();
       }
     }
     // Strip buttons (e.g. "Thought for Xs" toggle, action buttons)
     clone.querySelectorAll('button').forEach((el) => el.remove());
+    // Strip toolbar/action-bar containers (copy/vote buttons area)
+    clone.querySelectorAll('[class*="justify-between"][class*="cursor-default"]').forEach((el) => el.remove());
     const structured = [...clone.querySelectorAll('p, li, pre, code, h1, h2, h3, h4, h5, h6')]
       .map((el) => el.textContent?.trim()).filter(Boolean);
     if (structured.length > 0) return structured.join('\\n');
@@ -100,7 +107,13 @@ export const POLL_RESPONSE_JS = `(() => {
         s.querySelector && s.querySelector('.leading-relaxed')
       );
       if (hasSibWithResponse) {
-        return afterMe.filter(s => s.textContent?.trim());
+        return afterMe.filter(s => {
+          if (!s.textContent?.trim()) return false;
+          // Skip invisible status indicators (opacity-0, hidden, pointer-events-none)
+          const c = (typeof s.className === 'string') ? s.className : '';
+          if (/\\bopacity-0\\b/.test(c) || /\\bhidden\\b/.test(c) || /\\bpointer-events-none\\b/.test(c)) return false;
+          return true;
+        });
       }
       // Also check if parent is the per-turn conversation container (gap-y-3)
       const parentCls = parent.className || '';
@@ -111,7 +124,12 @@ export const POLL_RESPONSE_JS = `(() => {
           const turn = siblings[j];
           const nextUserGroup = turn.querySelector('.group.pt-4 .whitespace-pre-wrap');
           if (nextUserGroup) break;
-          if (turn.textContent?.trim()) blocks.push(turn);
+          if (turn.textContent?.trim()) {
+            const tc = (typeof turn.className === 'string') ? turn.className : '';
+            if (!/\\bopacity-0\\b/.test(tc) && !/\\bhidden\\b/.test(tc) && !/\\bpointer-events-none\\b/.test(tc)) {
+              blocks.push(turn);
+            }
+          }
         }
         return blocks;
       }
@@ -128,7 +146,12 @@ export const POLL_RESPONSE_JS = `(() => {
       const turn = allTurns[i];
       if (turn.classList.contains('group') && turn.classList.contains('pt-4')
           && turn.querySelector('.whitespace-pre-wrap')) break;
-      if (turn.textContent?.trim()) blocks.push(turn);
+      if (turn.textContent?.trim()) {
+        const tc = (typeof turn.className === 'string') ? turn.className : '';
+        if (!/\\bopacity-0\\b/.test(tc) && !/\\bhidden\\b/.test(tc) && !/\\bpointer-events-none\\b/.test(tc)) {
+          blocks.push(turn);
+        }
+      }
     }
     return blocks;
   })();
@@ -138,7 +161,12 @@ export const POLL_RESPONSE_JS = `(() => {
   const responseParts = [];
   for (const b of assistantBlocks) {
     // Check for .leading-relaxed.select-text — this is the main response text block
-    const responseEls = b.querySelectorAll('.leading-relaxed.select-text');
+    // Filter out any that are inside collapsed thinking containers (max-h-0/opacity-0)
+    const responseEls = [...b.querySelectorAll('.leading-relaxed.select-text')].filter(el => {
+      const hiddenAncestor = el.closest('.max-h-0, .opacity-0');
+      // Only exclude if the hidden ancestor is within this block (not the block itself)
+      return !hiddenAncestor || !b.contains(hiddenAncestor);
+    });
     // Detect thinking: <details>, [class*="thinking"], [class*="thought"],
     // or "Thought for Xs" button + adjacent collapsed container, or opacity-70 blocks
     const thinkEls = b.querySelectorAll('details, [class*="thinking"], [class*="thought"]');
