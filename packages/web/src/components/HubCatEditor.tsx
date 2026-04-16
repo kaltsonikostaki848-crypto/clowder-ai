@@ -6,6 +6,7 @@ import { apiFetch } from '@/utils/api-client';
 import type { ConfigData } from './config-viewer-types';
 import type { TemplateCard } from './first-run-quest/TemplateStep';
 import type { AccountsResponse, ProfileItem } from './hub-accounts.types';
+import { ensureBuiltinAccounts } from './hub-accounts.view';
 import { buildEditorLoadingNote, uploadAvatarAsset } from './hub-cat-editor.client';
 import {
   autoSlug,
@@ -141,7 +142,7 @@ export function HubCatEditor({ cat, draft, existingCats, open, onClose, onSaved 
         return (await res.json()) as AccountsResponse;
       })
       .then((body) => {
-        if (!cancelled) setProfiles(body.providers);
+        if (!cancelled) setProfiles(ensureBuiltinAccounts(body.providers));
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : '账号配置加载失败');

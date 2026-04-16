@@ -283,6 +283,32 @@ describe('generateOpenCodeRuntimeConfig', () => {
     assert.equal(config.model, 'kimi/moonshot-v2');
   });
 
+  test('accountRef namespace is stripped from model name field (volcengine-plan bug)', () => {
+    const config = generateOpenCodeRuntimeConfig({
+      providerName: 'openai',
+      models: ['volcengine-plan/doubao-seed-2.0-pro', 'volcengine-plan/kimi-k2.5'],
+      defaultModel: 'openai/volcengine-plan/doubao-seed-2.0-pro',
+      apiType: 'openai',
+      hasBaseUrl: true,
+      accountRef: 'volcengine-plan',
+    });
+
+    // Map key keeps namespace (for CLI routing lookup)
+    assert.ok(config.provider['openai-compat'].models['volcengine-plan/doubao-seed-2.0-pro'],
+      'map key must keep namespace for CLI routing');
+    // name field must be bare model ID (what the API actually accepts)
+    assert.equal(
+      config.provider['openai-compat'].models['volcengine-plan/doubao-seed-2.0-pro'].name,
+      'doubao-seed-2.0-pro',
+      'name field must strip accountRef namespace — API rejects prefixed names',
+    );
+    assert.equal(
+      config.provider['openai-compat'].models['volcengine-plan/kimi-k2.5'].name,
+      'kimi-k2.5',
+      'name field must strip accountRef namespace for all models',
+    );
+  });
+
   test('unknown apiType falls back to openai-compatible adapter', () => {
     const config = generateOpenCodeRuntimeConfig({
       providerName: 'test',

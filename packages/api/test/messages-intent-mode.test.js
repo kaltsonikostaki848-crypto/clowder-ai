@@ -29,12 +29,16 @@ function makeMockRouter(routeFn, routeExecutionFn) {
 
 function makeMockSocketManager() {
   const events = [];
+  const agentMessages = [];
   return {
     events,
+    agentMessages,
     broadcastToRoom(room, event, payload) {
       events.push({ room, event, payload });
     },
-    broadcastAgentMessage() {},
+    broadcastAgentMessage(msg, threadId) {
+      agentMessages.push({ msg, threadId });
+    },
     emitToUser() {},
   };
 }
@@ -176,6 +180,31 @@ describe('#768 messages.ts main path', () => {
       0,
       '#768: main path must NOT broadcast intent_mode when routeExecution throws before yielding',
     );
+    await app.close();
+  });
+
+  it('routeExecution throw emits terminal error bound to target cat + invocationId', async () => {
+    const sm = makeMockSocketManager();
+    const { app } = await buildApp({
+      socketManager: sm,
+      router: makeMockRouter(undefined, async function* () {
+        throw new Error('CLI spawn failed');
+      }),
+      invocationRecordStore: makeMockInvocationRecordStore(),
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/messages',
+      payload: { content: '@codex test', threadId: 'thread-768-main-throw-error-routing' },
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    const terminalError = sm.agentMessages.find((entry) => entry.msg?.type === 'error' && entry.msg?.isFinal === true);
+    assert.ok(terminalError, 'must emit terminal error when routeExecution throws');
+    assert.equal(terminalError.msg.catId, 'codex', 'terminal error must bind to target cat to clear correct slot');
+    assert.equal(typeof terminalError.msg.invocationId, 'string', 'terminal error must carry invocationId');
     await app.close();
   });
 

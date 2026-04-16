@@ -1058,12 +1058,14 @@ export const messagesRoutes: FastifyPluginAsync<MessagesRoutesOptions> = async (
               status: 'failed',
               error: errorMsg,
             });
+            const fallbackCat = targetCats[0] ?? getDefaultCatId();
             opts.socketManager.broadcastAgentMessage(
               {
                 type: 'error',
-                catId: getDefaultCatId(),
+                catId: fallbackCat,
                 error: errorMsg,
                 isFinal: true,
+                invocationId: createResult.invocationId,
                 timestamp: Date.now(),
               },
               resolvedThreadId,
