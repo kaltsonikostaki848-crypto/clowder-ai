@@ -76,6 +76,8 @@ export interface EvidenceRoutesOptions {
   knowledgeResolver?: IKnowledgeResolver;
 }
 
+let rebuildRequestInFlight = false;
+
 export const evidenceRoutes: FastifyPluginAsync<EvidenceRoutesOptions> = async (app, opts) => {
   app.get('/api/evidence/search', async (request, reply) => {
     const parseResult = searchSchema.safeParse(request.query);
@@ -257,6 +259,13 @@ export const evidenceRoutes: FastifyPluginAsync<EvidenceRoutesOptions> = async (
         /* table may not exist */
       }
 
+      let vectorsCount = 0;
+      try {
+        vectorsCount = (db.prepare('SELECT count(*) AS c FROM evidence_vectors').get() as { c: number }).c;
+      } catch {
+        /* sqlite-vec or table may not exist */
+      }
+
       return {
         backend: 'sqlite',
         healthy: true,
@@ -264,11 +273,55 @@ export const evidenceRoutes: FastifyPluginAsync<EvidenceRoutesOptions> = async (
         threads_count: threadCount,
         passages_count: passageCount,
         edges_count: edgeCount,
+        vectors_count: vectorsCount,
         last_rebuild_at: lastUpdated,
+        embed_mode: process.env.EMBED_MODE ?? 'off',
+        embedding_ready: opts.indexBuilder?.isEmbedReady() ?? false,
         embedding_model: embeddingModel,
       };
     } catch {
       return { backend: 'sqlite', healthy: false, reason: 'query_error' };
+    }
+  });
+
+  const rebuildSchema = z.object({ force: z.boolean().optional() }).optional();
+
+  app.post('/api/evidence/rebuild', async (request, reply) => {
+    const remoteIp = request.ip;
+    if (remoteIp !== '127.0.0.1' && remoteIp !== '::1' && remoteIp !== '::ffff:127.0.0.1') {
+      reply.status(403);
+      return { error: 'rebuild only allowed from localhost' };
+    }
+
+    if (!opts.indexBuilder) {
+      reply.status(503);
+      return { error: 'indexBuilder not available' };
+    }
+
+    const parsed = rebuildSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      reply.status(400);
+      return { error: 'Invalid request body', details: parsed.error.issues };
+    }
+
+    if (rebuildRequestInFlight) {
+      reply.status(409);
+      return { error: 'rebuild already in progress' };
+    }
+    rebuildRequestInFlight = true;
+
+    try {
+      const result = await opts.indexBuilder.rebuild({ force: parsed.data?.force ?? false });
+      return { ok: true, ...result };
+    } catch (err) {
+      if (err instanceof Error && err.message === 'rebuild-in-flight') {
+        reply.status(409);
+        return { error: 'rebuild already in progress' };
+      }
+      reply.status(500);
+      return { error: 'rebuild failed', message: String(err) };
+    } finally {
+      rebuildRequestInFlight = false;
     }
   });
 

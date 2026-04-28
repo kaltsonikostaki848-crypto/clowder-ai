@@ -663,6 +663,21 @@ async function main(): Promise<void> {
     }
   }
 
+  if (memoryServices.indexBuilder && process.env.EMBED_AUTO_BACKFILL !== '0') {
+    void (async () => {
+      try {
+        const r = await memoryServices.indexBuilder!.backfillEmbeddingsIfNeeded();
+        if (r.backfilled > 0) {
+          app.log.info(`[api] F102: auto-backfilled ${r.backfilled} embeddings`);
+        } else if (r.skipped && r.skipped !== 'already-populated' && r.skipped !== 'no-docs') {
+          app.log.info(`[api] F102: auto-backfill skipped (${r.skipped})`);
+        }
+      } catch (err) {
+        app.log.warn(`[api] F102: auto-backfill failed (non-fatal): ${err}`);
+      }
+    })();
+  }
+
   // F-4: Global knowledge rebuild (Skills + MEMORY.md → global_knowledge.sqlite)
   if (memoryServices.globalIndexBuilder) {
     try {

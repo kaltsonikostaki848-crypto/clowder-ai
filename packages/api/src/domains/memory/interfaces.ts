@@ -222,6 +222,19 @@ export interface IIndexBuilder {
   rebuild(options?: { force?: boolean }): Promise<RebuildResult>;
   incrementalUpdate(changedPaths: string[]): Promise<void>;
   checkConsistency(): Promise<ConsistencyReport>;
+  /**
+   * Startup self-heal for "docs indexed but vectors empty" (e.g. embedding enabled after ingest).
+   * No-op unless embedDeps + embedding.isReady() + docs_count>0 + vectors_count===0. Idempotent.
+   * Throws `rebuild-in-flight` if a rebuild/backfill is already running.
+   */
+  backfillEmbeddingsIfNeeded(): Promise<BackfillResult>;
+  /** True when the embedding sidecar is reachable and ready. */
+  isEmbedReady(): boolean;
+}
+
+export interface BackfillResult {
+  backfilled: number;
+  skipped?: 'no-embed-deps' | 'not-ready' | 'no-docs' | 'already-populated' | 'in-flight';
 }
 
 export interface IMarkerQueue {

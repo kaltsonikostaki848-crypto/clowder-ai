@@ -7,6 +7,7 @@ import { join, relative, resolve } from 'node:path';
 import { CatCafeScanner, extractAnchor, extractFrontmatter } from './CatCafeScanner.js';
 import { GenericRepoScanner } from './GenericRepoScanner.js';
 import type {
+  BackfillResult,
   ConsistencyReport,
   EvidenceItem,
   EvidenceKind,
@@ -130,6 +131,9 @@ export class IndexBuilder implements IIndexBuilder {
   /** F152 P1-1 fix: the root directory the scanner should scan (may differ from docsRoot) */
   private readonly scanRoot: string;
 
+  /** Single-flight mutex shared by rebuild() and backfillEmbeddingsIfNeeded() to prevent duplicate embed work. */
+  private _rebuildInFlight = false;
+
   constructor(
     private readonly store: SqliteEvidenceStore,
     private readonly docsRoot: string,
@@ -192,6 +196,18 @@ export class IndexBuilder implements IIndexBuilder {
   }
 
   async rebuild(options?: { force?: boolean }): Promise<RebuildResult> {
+    if (this._rebuildInFlight) {
+      throw new Error('rebuild-in-flight');
+    }
+    this._rebuildInFlight = true;
+    try {
+      return await this.rebuildInternal(options);
+    } finally {
+      this._rebuildInFlight = false;
+    }
+  }
+
+  private async rebuildInternal(options?: { force?: boolean }): Promise<RebuildResult> {
     const start = Date.now();
     let indexed = 0;
     let skipped = 0;
@@ -477,6 +493,37 @@ export class IndexBuilder implements IIndexBuilder {
           // fail-open: skip embedding on error
         }
       }
+    }
+  }
+
+  isEmbedReady(): boolean {
+    return this.embedDeps?.embedding.isReady() ?? false;
+  }
+
+  async backfillEmbeddingsIfNeeded(): Promise<BackfillResult> {
+    if (this._rebuildInFlight) return { backfilled: 0, skipped: 'in-flight' };
+    if (!this.embedDeps) return { backfilled: 0, skipped: 'no-embed-deps' };
+    if (!this.embedDeps.embedding.isReady()) return { backfilled: 0, skipped: 'not-ready' };
+
+    const db = this.store.getDb();
+    const docCount = (db.prepare('SELECT count(*) AS c FROM evidence_docs').get() as { c: number }).c;
+    if (docCount === 0) return { backfilled: 0, skipped: 'no-docs' };
+
+    const vecCountBefore = this.embedDeps.vectorStore.count();
+    if (vecCountBefore > 0) return { backfilled: 0, skipped: 'already-populated' };
+
+    this._rebuildInFlight = true;
+    try {
+      const rows = db
+        .prepare('SELECT anchor, title, summary FROM evidence_docs')
+        .all() as Array<{ anchor: string; title: string; summary: string | null }>;
+      const items = rows.map(
+        (r) => ({ anchor: r.anchor, title: r.title, summary: r.summary ?? undefined }) as EvidenceItem,
+      );
+      await this.embedIndexedItems(items);
+      return { backfilled: this.embedDeps.vectorStore.count() };
+    } finally {
+      this._rebuildInFlight = false;
     }
   }
 

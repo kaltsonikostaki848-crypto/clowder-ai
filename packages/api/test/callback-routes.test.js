@@ -13,12 +13,19 @@ import './helpers/setup-cat-registry.js';
 // Mock SocketManager
 function createMockSocketManager() {
   const messages = [];
+  const userEvents = [];
   return {
     broadcastAgentMessage(msg) {
       messages.push(msg);
     },
+    emitToUser(userId, event, data) {
+      userEvents.push({ userId, event, data });
+    },
     getMessages() {
       return messages;
+    },
+    getUserEvents() {
+      return userEvents;
     },
   };
 }
@@ -123,6 +130,74 @@ describe('Callback Routes', () => {
     const recent = messageStore.getRecent(10);
     assert.equal(recent.length, 1);
     assert.equal(recent[0].content, 'Hello from cat!');
+  });
+
+  test('POST post-message with queued A2A is still visible in history (refresh regression)', async () => {
+    const { callbacksRoutes } = await import('../dist/routes/callbacks.js');
+    const app = Fastify();
+
+    const invocationQueue = {
+      enqueue(input) {
+        return { outcome: 'enqueued', entry: { id: 'q-1', ...input, status: 'queued', createdAt: Date.now() } };
+      },
+      countAgentEntriesForThread() {
+        return 0;
+      },
+      hasQueuedAgentForCat() {
+        return false;
+      },
+      backfillMessageId() {},
+      appendMergedMessageId() {},
+      list() {
+        return [];
+      },
+    };
+    const queueProcessor = {
+      onInvocationComplete() {},
+      async tryAutoExecute() {},
+    };
+    const router = {
+      async *routeExecution() {},
+    };
+    const invocationRecordStore = {
+      async create() {
+        return { outcome: 'created', invocationId: 'inv-a2a-1' };
+      },
+      async update() {},
+    };
+
+    await app.register(callbacksRoutes, {
+      registry,
+      messageStore,
+      socketManager,
+      threadStore,
+      evidenceStore,
+      reflectionService,
+      markerQueue,
+      router,
+      invocationRecordStore,
+      queueProcessor,
+      invocationQueue,
+    });
+
+    const { invocationId, callbackToken } = registry.create('user-1', 'opus');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/callbacks/post-message',
+      payload: {
+        invocationId,
+        callbackToken,
+        content: '交接给你\n@缅因猫',
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+
+    // Regression guard: callback text must survive refresh/history read even when A2A queue entry exists.
+    const threadMessages = messageStore.getByThread('default', 20, 'user-1');
+    assert.equal(threadMessages.length, 1);
+    assert.equal(threadMessages[0].content, '交接给你\n@缅因猫');
   });
 
   test('POST post-message calls outboundHook.deliver when wired', async () => {
