@@ -13,6 +13,10 @@ function inferBuiltinClient(profile: ProfileItem): BuiltinAccountClient | undefi
   return undefined;
 }
 
+export function ensureBuiltinAccounts(profiles: ProfileItem[]): ProfileItem[] {
+  return normalizeBuiltinClientIds(profiles);
+}
+
 export function normalizeBuiltinClientIds(profiles: ProfileItem[]): ProfileItem[] {
   return profiles.map((profile) => {
     if (!profile.builtin) return profile;
