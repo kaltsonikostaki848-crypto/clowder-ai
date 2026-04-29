@@ -95,7 +95,7 @@ async function probeUpstreamHealth() {
       body: JSON.stringify({
         model: UPSTREAM_MODEL,
         input: ['health'],
-        dimensions: 1,
+        dimensions: 64,
         encoding_format: 'float',
       }),
       signal: AbortSignal.timeout(5000),
