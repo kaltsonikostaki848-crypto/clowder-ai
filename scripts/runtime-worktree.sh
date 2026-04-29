@@ -418,7 +418,7 @@ start_runtime_worktree() {
     # In-place deployment: binary == workspace == PROJECT_DIR
     export CAT_CAFE_RUNTIME_ROOT="$PROJECT_DIR"
     export CAT_CAFE_WORKSPACE_ROOT="${CAT_CAFE_WORKSPACE_ROOT:-$PROJECT_DIR}"
-    exec env CAT_CAFE_STRICT_PROFILE_DEFAULTS=1 ./scripts/start-dev.sh --prod-web --profile=opensource ${START_ARGS[@]+"${START_ARGS[@]}"}
+    exec env CAT_CAFE_STRICT_PROFILE_DEFAULTS=1 CAT_CAFE_DIRECT_NO_WATCH=1 ./scripts/start-dev.sh --prod-web --profile=opensource ${START_ARGS[@]+"${START_ARGS[@]}"}
   fi
 
   if ! worktree_exists; then
@@ -457,7 +457,7 @@ start_runtime_worktree() {
   info "exporting CAT_CAFE_WORKSPACE_ROOT=$CAT_CAFE_WORKSPACE_ROOT"
   # Runtime = production: auto-inject --prod-web for PWA + Tailscale support.
   # Bash 3.2 + set -u: empty-array expansion can throw "unbound variable".
-  exec env CAT_CAFE_STRICT_PROFILE_DEFAULTS=1 ./scripts/start-dev.sh --prod-web --profile=opensource ${START_ARGS[@]+"${START_ARGS[@]}"}
+  exec env CAT_CAFE_STRICT_PROFILE_DEFAULTS=1 CAT_CAFE_DIRECT_NO_WATCH=1 ./scripts/start-dev.sh --prod-web --profile=opensource ${START_ARGS[@]+"${START_ARGS[@]}"}
 }
 
 COMMAND="${1:-status}"
