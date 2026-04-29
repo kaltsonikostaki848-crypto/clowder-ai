@@ -1298,9 +1298,13 @@ main() {
         fi
     fi
 
-    # Embedding Server (F102 记忆系统 — Qwen3-Embedding MLX GPU)
+    # Embedding Server (F102 memory system)
     if [ "${EMBED_ENABLED:-0}" = "1" ]; then
-        if ! check_sidecar_dep "Embedding" "python3"; then
+        local embed_python_required=true
+        if [ -n "${EMBED_PROXY_UPSTREAM_URL:-}" ] && [ -n "${EMBED_PROXY_UPSTREAM_KEY:-}" ]; then
+            embed_python_required=false
+        fi
+        if $embed_python_required && ! check_sidecar_dep "Embedding" "python3"; then
             _STATE_EMBED=failed
         elif [ -f "scripts/embed-server.sh" ]; then
             start_sidecar "Embedding" "_STATE_EMBED" "${EMBED_PORT:-9880}" "${EMBED_TIMEOUT:-30}" \

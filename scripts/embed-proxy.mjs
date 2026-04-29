@@ -84,15 +84,39 @@ async function embedAll(inputs) {
   return out.map((embedding, index) => ({ embedding, index }));
 }
 
+async function probeUpstreamHealth() {
+  try {
+    const res = await fetch(`${UPSTREAM_URL}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${UPSTREAM_KEY}`,
+      },
+      body: JSON.stringify({
+        model: UPSTREAM_MODEL,
+        input: ['health'],
+        dimensions: 1,
+        encoding_format: 'float',
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 const server = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/health') {
-      sendJson(res, 200, {
-        status: 'ok',
+      const upstreamOk = await probeUpstreamHealth();
+      sendJson(res, upstreamOk ? 200 : 503, {
+        status: upstreamOk ? 'ok' : 'degraded',
         model: UPSTREAM_MODEL,
         backend: `proxy:${new URL(UPSTREAM_URL).host}`,
         device: 'remote',
         dim: DIM,
+        upstream: upstreamOk ? 'reachable' : 'unreachable',
       });
       return;
     }

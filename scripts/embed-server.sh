@@ -35,6 +35,29 @@ fi
 if [ -f "$SCRIPT_DIR/embed-api.py" ]; then
   echo "=== Starting native MLX embedding server ==="
   echo "  Port: $PORT"
+
+  VENV_DIR="${HOME}/.cat-cafe/embed-venv"
+  PLATFORM="$(uname -s)"
+  ARCH="$(uname -m)"
+
+  if [ ! -d "$VENV_DIR" ]; then
+    echo "  Creating venv: $VENV_DIR ..."
+    python3 -m venv "$VENV_DIR"
+  fi
+  source "$VENV_DIR/bin/activate"
+
+  if [ "$PLATFORM" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
+    if ! python3 -c "import mlx_embeddings" 2>/dev/null; then
+      echo "  Installing: mlx + mlx-embeddings ..."
+      pip install --quiet mlx mlx-embeddings fastapi uvicorn numpy
+    fi
+  else
+    if ! python3 -c "import sentence_transformers" 2>/dev/null; then
+      echo "  Installing: sentence-transformers + torch ..."
+      pip install --quiet sentence-transformers torch fastapi uvicorn numpy
+    fi
+  fi
+
   exec python3 "$SCRIPT_DIR/embed-api.py" --port "$PORT"
 fi
 

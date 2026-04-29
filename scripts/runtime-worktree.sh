@@ -213,12 +213,15 @@ seed_runtime_config_from_project() {
     info "seeded runtime config: .cat-cafe/$file"
   done
 
-  # Seed .env so that runtime worktree sees the same sidecar
+  # Sync .env so that runtime worktree sees the same sidecar
   # settings as the main project (embedding proxy, etc.).
-  if [ -f "$PROJECT_DIR/.env" ] && [ ! -s "$RUNTIME_DIR/.env" ]; then
-    cp "$PROJECT_DIR/.env" "$RUNTIME_DIR/.env"
-    chmod 600 "$RUNTIME_DIR/.env" || true
-    info "seeded .env from main project"
+  # Always re-copy during sync — the main project is the source of truth.
+  if [ -f "$PROJECT_DIR/.env" ]; then
+    if ! cmp -s "$PROJECT_DIR/.env" "$RUNTIME_DIR/.env" 2>/dev/null; then
+      cp "$PROJECT_DIR/.env" "$RUNTIME_DIR/.env"
+      chmod 600 "$RUNTIME_DIR/.env" || true
+      info "synced .env from main project"
+    fi
   fi
 }
 

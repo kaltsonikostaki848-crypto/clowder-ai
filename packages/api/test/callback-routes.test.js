@@ -180,7 +180,7 @@ describe('Callback Routes', () => {
       invocationQueue,
     });
 
-    const { invocationId, callbackToken } = registry.create('user-1', 'opus');
+    const { invocationId, callbackToken } = await registry.create('user-1', 'opus');
 
     const response = await app.inject({
       method: 'POST',
