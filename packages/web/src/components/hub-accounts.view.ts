@@ -13,8 +13,39 @@ function inferBuiltinClient(profile: ProfileItem): BuiltinAccountClient | undefi
   return undefined;
 }
 
+const BUILTIN_OAUTH_DEFAULTS: Array<{ id: string; clientId: BuiltinAccountClient; displayName: string }> = [
+  { id: 'claude', clientId: 'anthropic', displayName: 'Claude (OAuth)' },
+  { id: 'codex', clientId: 'openai', displayName: 'Codex (OAuth)' },
+  { id: 'gemini', clientId: 'google', displayName: 'Gemini (OAuth)' },
+  { id: 'kimi', clientId: 'kimi', displayName: 'Kimi (OAuth)' },
+  { id: 'dare', clientId: 'dare', displayName: 'Dare (OAuth)' },
+  { id: 'opencode', clientId: 'opencode', displayName: 'OpenCode (OAuth)' },
+];
+
+function synthesizeMissingBuiltinOAuth(profiles: ProfileItem[]): ProfileItem[] {
+  const result = [...profiles];
+  const existingBuiltins = new Set(profiles.filter((p) => p.builtin).map((p) => p.id));
+  for (const def of BUILTIN_OAUTH_DEFAULTS) {
+    if (existingBuiltins.has(def.id)) continue;
+    result.push({
+      id: def.id,
+      displayName: def.displayName,
+      name: def.displayName,
+      authType: 'oauth',
+      kind: 'builtin',
+      builtin: true,
+      mode: 'subscription',
+      clientId: def.clientId,
+      hasApiKey: false,
+      createdAt: '',
+      updatedAt: '',
+    });
+  }
+  return result;
+}
+
 export function ensureBuiltinAccounts(profiles: ProfileItem[]): ProfileItem[] {
-  return normalizeBuiltinClientIds(profiles);
+  return synthesizeMissingBuiltinOAuth(normalizeBuiltinClientIds(profiles));
 }
 
 export function normalizeBuiltinClientIds(profiles: ProfileItem[]): ProfileItem[] {
